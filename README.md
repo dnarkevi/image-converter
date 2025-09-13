@@ -4,12 +4,12 @@ Many phones and cameras use different filenames to save photos. This program sor
 
 ## Features
 
-– **Auto Sort**: Photos and videos are organized by date.
-- **Bulk Rename**: Files are renamed by their date, ensuring consistent naming.
-- **Optimized Resize**: Creates lower resolution copies suitable for sharing online and for high-quality 10x15 cm prints (300 DPI).
-- **Secure Workflow**: Includes automatic backup of original files before processing.
-- **Cross-platform**: Built for Windows with a simple executable, but the Python source code runs on any OS.
-- **Flexible Interface**: Uses a simple command line interface.
+– __Auto Sort__: Photos and videos are organized by date.
+- __Bulk Rename__: Files are renamed by their date, ensuring consistent naming.
+- __Optimized Resize__: Creates lower resolution copies suitable for sharing online and for high-quality 10x15 cm prints (300 DPI).
+- __Secure Workflow__: Includes automatic backup of original files before processing.
+- __Cross-platform__: Built for Windows with a simple executable, but the Python source code runs on any OS.
+- __Flexible Interface__: Uses a simple command line interface.
 
 
 ## Get Started
