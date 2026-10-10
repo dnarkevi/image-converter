@@ -2,37 +2,92 @@ import os
 import PIL
 from PIL import ImageFile
 from io import BytesIO
-from natsort import natsorted  # https://pypi.org/project/natsort/
+from natsort import natsorted, index_natsorted, ns  # https://pypi.org/project/natsort/
 import shutil
 import ffmpeg  # https://pypi.org/project/ffmpeg-python/ https://github.com/BtbN/FFmpeg-Builds/releases
 import exifread  # https://pypi.org/project/ExifRead/
 import logging
 import sys
+import json
 
-# Allows images to be opened with misssing data.
+# Allows images to be opened with missing data.
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 # Disabling error printing.
 logging.getLogger('exifread').setLevel(logging.ERROR)
 
-QUALITY = 85
-# This is for photos 10x15 (cm) with DPI of 300.
-# Exact photo size 102x152 (mm), which corresponds to 1795x1205 resolution. Source: https://fotoprint.lt/informacija/rekomenduojama-failu-raiska/
-LONG_SIDE = 1795  
-SHORT_SIDE = 1205
-DPI = (300, 300)
-# ROOT = os.path.split(__file__)[0]
-BACKUP_PATH = "BACKUP"
-LOW_RES_PATH = "LOWRES"
-PROGRAM_DIR = os.path.split(__file__)[0]
-EXE_PATH = os.path.abspath(sys.executable)
-# print(PROGRAM_DIR, EXE_PATH)
-# input()
+if hasattr(sys, "frozen"):
+    APP_PATH = sys.executable
+    LICENCE_PATH = os.path.join(sys._MEIPASS, "LICENSE")
+else:
+    APP_PATH = __file__
+    LICENCE_DIR_PATH = os.path.split(APP_PATH)[0]
+    LICENCE_PATH = os.path.join(LICENCE_DIR_PATH, "LICENSE")
+APP_PATH = os.path.abspath(APP_PATH)
+BASE_PATH = os.path.split(APP_PATH)[0]
+CONFIG_PATH = os.path.join(BASE_PATH, "convimg_config.json")
+FILE_BLACKLIST = (APP_PATH, CONFIG_PATH)
 
-input_dir_path = os.getcwd()
-use_date = True
-do_sort_date = True
-do_backup = True
-do_low_res = True
+# These defaults are for photos 10x15 (cm) with DPI of 300.
+# Exact photo size 102x152 (mm), which corresponds to optimal 1795x1205 resolution. Source: https://fotoprint.lt/informacija/rekomenduojama-failu-raiska/
+
+default_config = {
+    "QUALITY": 85,
+    "LONG_SIDE": 1795,
+    "SHORT_SIDE": 1205,
+    "DPI": [300, 300],
+    "BACKUP_PATH": "./BACKUP",
+    "LOW_RES_PATH": "./LOWRES",
+    "do_backup": True,
+    "do_sort_filename": False,
+    "do_sort_date": True,
+    "use_date": True,
+    "do_low_res": True
+}
+
+# Loading configuration file.
+warning = ""
+if os.path.isfile(CONFIG_PATH):
+    try:
+        with open(CONFIG_PATH, "r") as file:
+            config = json.load(file)
+        # Validate types against default_config
+        for key, value in default_config.items():
+            if key in config:
+                if not isinstance(config[key], type(value)):
+                    warning = f"WARNING: Setting '{key}' has an invalid type in the configuration file. Falling back to default values:"
+                    break
+            else:
+                warning = f"WARNING: Setting '{key}' is missing in the configuration file. Falling back to default values:"
+                break
+    except json.JSONDecodeError:
+        warning = "WARNING: There is a syntax error in the configuration file. Falling back to default values:"
+    if warning:
+        print(warning)
+        print("\n".join(f"{k}: {v}" for k, v in default_config.items()))
+        input("Press Enter to continue ...")
+        config = default_config
+    else:
+        # Filter out any rogue keys the user added to the JSON
+        config = {key: config[key] for key in default_config}
+else:
+    with open(CONFIG_PATH, "w") as file:
+        json.dump(default_config, file, indent=4)
+    config = default_config
+
+globals().update(config)
+
+if len(sys.argv) == 1:
+    pass
+elif len(sys.argv) == 2:
+    if os.path.isdir(sys.argv[1]):
+        os.chdir(sys.argv[1])
+    else:
+        print("WARNING: Invalid directory path provided. Falling back to default directory path.")
+        input("Press Enter to continue ...")
+else:
+    print("WARNING: Invalid arguments provided. Falling back to default directory path.")
+    input("Press Enter to continue ...")
+
 
 def clear():
     """Clears terminal for Windows (Linux and Mac unsupported)."""
@@ -40,9 +95,9 @@ def clear():
 
 
 def estimate_image_size(image):
-    """Tells how much space will take an image."""
+    """Tells how much space an image will take."""
     with BytesIO() as buffer:
-        image.save(buffer, "JPEG", quality=QUALITY, optimize=True, progressive=True)
+        image.save(buffer, "JPEG", quality=QUALITY, optimize=True, progressive=True, dpi=DPI)
         return buffer.tell()
 
 
@@ -75,7 +130,8 @@ def resize_and_convert_photo(input_path, output_path):
             target_width, target_height = SHORT_SIDE, LONG_SIDE
 
         if width < target_width or height < target_height:
-            pass
+            new_width = width
+            new_height = height
         else:
             if width / target_width > height / target_height:
                 scale = height / target_height
@@ -96,6 +152,7 @@ def resize_and_convert_photo(input_path, output_path):
         img.save(output_path, "JPEG", quality=QUALITY, optimize=True, progressive=True, dpi=DPI)
         return True, ("%dx%d" % (width, height), "%dx%d" % (new_width, new_height))
 
+
 def gen_file_paths(root, nested=True):
     """Generates tuple of paths of all files in the provided directory."""
     path_list = []
@@ -103,41 +160,16 @@ def gen_file_paths(root, nested=True):
         for dir_path, dirs, files in os.walk(root):
             for file in files:
                 path = os.path.join(dir_path, file)
-                if os.path.abspath(path) != EXE_PATH:
+                # Excluding this program when converting filenames.
+                if not (os.path.abspath(path) in FILE_BLACKLIST):
                     path_list.append(path)
     else:
         for file in os.listdir(root):
             path = os.path.join(root, file)
-            if os.path.isfile(path) and os.path.abspath(path) != EXE_PATH:
+            if os.path.isfile(path) and (not (os.path.abspath(path) in FILE_BLACKLIST)):
                 path_list.append(path)
     return tuple(path_list)
 
-
-#def load_config(dir_path)
-#    path = os.path.join(dir_path, "config.txt")
-#    if not os.path.exists(path):
-#        raise FileNotFoundError("Config file does not exist")
-#    with open(path, 'r') as file:
-#        for line in file:
-#            line = line.strip()
-#            if line and ('=' in line):
-#                key, value = line.split('=', 1)
-#                # Dynamically set a global variable
-#                globals()[key.strip()] = value.strip()
-#
-#
-#def save_config(dir_path, key, value)
-#    path = os.path.join(dir_path, "config.txt")
-#    if not os.path.exists(path):
-#        raise FileNotFoundError("Config file does not exist")
-#    lines = []
-#    with open(path, 'r') as file:
-#        for line in file:
-#            line = line.strip()
-#            if line and ('=' in line):
-#                seek_key, seek_value = line.split('=', 1)
-#                if seek_key == key:
-#                    seek_value = value
 
 def tell_state(state):
     """Tells bool state in human language."""
@@ -158,7 +190,6 @@ def get_state(value, init):
         print("Provided value is invalid. You should write y or n.")
         input("Press Enter to continue ...")
         return init
-        
 
 
 def del_files(paths):
@@ -203,15 +234,25 @@ def get_video_date(path):
             date_taken1 = metadata["streams"][0]["tags"]["creation_time"]
             date_taken2 = metadata["streams"][0]["tags"]["creation_time"]
         except Exception as e:
-            print(e)
             return None
         if date_taken != date_taken1 != date_taken2:
-            print("Warning: video creation date matadata is wrong.")
+            print("Warning: video creation date metadata is wrong.")
             return None
         date_taken = date_taken.replace('T', ' ')[:19]
         return date_taken
     except (ffmpeg._run.Error, FileNotFoundError):
         print("To read video metadata, you must install the ffprobe.exe executable and add it to your system's PATH environment variable.")
+        return None
+
+
+def get_date(path):
+    """Gets the date when media was created."""
+    extension = os.path.splitext(path)[1].lower()
+    if (extension in {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif", ".tif"}):
+        return get_picture_date(path)
+    elif (extension in {".mp4", ".mov", ".m4a"}):
+        return get_video_date(path)
+    else:
         return None
 
 
@@ -248,6 +289,41 @@ def join_paths(*path_input):
         path_output.append(os.path.normpath(new_path))
     return path_output
 
+
+def gen_numerated_filenames(paths, prefixes=None):
+    """Takes an array of paths and renames filenames to ascending numbers."""
+    if prefixes is None:
+        prefixes = [""] * len(paths)
+    new_paths = []
+    extensions = []
+    for path, prefix in zip(paths, prefixes):
+        ext = os.path.splitext(path)[1].lower()
+        if ext == ".jpeg":
+            ext = ".jpg"
+        extensions.append(ext)
+        dir_path = os.path.split(path)[0]
+        c = 1
+        new_path = os.path.join(dir_path, '%s%03d' % (prefix, c))
+        while new_path in new_paths:
+            c += 1
+            new_path = os.path.join(dir_path, '%s%03d' % (prefix, c))
+        new_paths.append(new_path)
+    new_paths = [path + ext for path, ext in zip(new_paths, extensions)]
+    return new_paths
+
+
+def gen_sorted_by_dates(paths, dates, include_date):
+    """Sorts filenames by the dates. May include the date in a filename."""
+    indices = index_natsorted(dates)
+    dates = [dates[i].split()[0] + " " for i in indices]
+    paths = [paths[i] for i in indices]
+    if include_date:
+        renamed_paths = gen_numerated_filenames(paths, dates)
+    else:
+        renamed_paths = gen_numerated_filenames(paths)
+    return renamed_paths, paths
+
+
 # Event loop.
 while True:
     clear()
@@ -255,16 +331,20 @@ while True:
     print("~~~~~ Welcome to Convert Images photo file manager program! ~~~~~")
     print()
     print("Commands and current settings")
-    print("w - Working directory:", input_dir_path)
+    print("w - Working directory:", os.getcwd())
     print("b - Create a backup:", tell_state(do_backup))
-    print("s - Sort photos by date:", tell_state(do_sort_date))
-    print("d - Date in a filename:", tell_state(use_date))
+    print("f - Rename filenames numerically:", tell_state(do_sort_filename))
+    print("d - Sort photos by date and rename filenames numerically:", tell_state(do_sort_date))
+    print("u - Use date in a filename:", tell_state(use_date))
     print("r - Create lower resolution copy:", tell_state(do_low_res))
-    print("c - Start converstion")
+    print("c - Start conversion")
+    print("i - Show license")
     print("h - Help")
     print("e - Exit")
     print()
     command = input("").strip()
+    if len(command) == 0:
+        continue
     event = command[0].lower()
     value = command[1:].strip()
     if event == "e":
@@ -275,30 +355,56 @@ while True:
 
     if event == "h":
         clear()
-        print(f"This program organizes photos by date, renames them, and saves them.\n\
-You can create a backup of your original images before any modifications.\n\
-Additionally, you can create a lower-resolution copy for optimal 10x15 cm prints,\n\
-with a DPI of {DPI} and a resolution of {LONG_SIDE}x{SHORT_SIDE}.\n\
-This program can also be used to number any files sequentially.\n\
-This program can be added to your system's PATH environment variable.")
+        print("\
+This program is designed to organize photos and videos, but all file types are accepted.\n\
+Features:\n\
+    * Extract media creation date from photos and videos.\n\
+    * Sort photos and videos by date.\n\
+    * Rename all file type filenames neatly in numerical format.\n\
+    * Create optimal lower-resolution photos using Lanczos algorithm.\n\
+    * Customize parameters in convimg_config.json.\n\
+Usage:\n\
+    * Type the flag (b, u, f, etc.) followed by 'Yes' or 'No' to change the parameter.\n\
+    * Flags 'f - Rename filenames numerically' and 'd - Sort photos by date and rename filenames numerically' can never be 'Yes' together.\n\
+    * Disable filename renaming by setting both 'f' and 'd' flags to 'No'. It is only useful for creating lower-resolution photos.\n\
+    * Use date in a filename by changing 'u - Use date in a filename' to 'Yes', which requires the 'd' flag to be 'Yes'.\n\
+    * Change working directory by launching from different location, by using 'w' flag in the program or by adding arguments:\n\
+    convimg.exe [target_directory] OR python3 convimg.py [target_directory]\n\
+")
+        input("Press Enter to continue ...")
+
+    if event == "i":
+        clear()
+        with open(LICENCE_PATH, 'r', encoding='utf-8') as file:
+            print(file.read())
         input("Press Enter to continue ...")
 
     if event == "w":
         if os.path.isdir(value):
-            input_dir_path = value
-            os.chdir(input_dir_path)
+            os.chdir(value)
         else:
             print("Provided path is invalid. Make sure folder exists.")
             input("Press Enter to continue ...")
 
     if event == "b":
         do_backup = get_state(value, do_backup)
-
-    if event == "s":
-        do_sort_date = get_state(value, do_sort_date)
+    
+    if event == "f":
+        do_sort_filename = get_state(value, do_sort_filename)
+        if do_sort_date and do_sort_filename:
+            do_sort_date = False
+            use_date = False
 
     if event == "d":
-        use_date = get_state(value, use_date)
+        do_sort_date = get_state(value, do_sort_date)
+        if do_sort_date and do_sort_filename:
+            do_sort_filename = False
+        if not do_sort_date:
+            use_date = False
+
+    if event == "u":
+        if do_sort_date:
+            use_date = get_state(value, use_date)
 
     if event == "r":
         do_low_res = get_state(value, do_low_res)
@@ -307,11 +413,11 @@ This program can be added to your system's PATH environment variable.")
     if event == "c":  # Main conversion code.
         clear()
         if os.path.isdir(BACKUP_PATH):
-            print(f"{BACKUP_PATH} folder already exist. Cannot convert, please remove it!")
+            print(f"{BACKUP_PATH} folder already exists. Cannot convert, please remove it!")
             input("Press Enter to continue ...")
             continue
         if os.path.isdir(LOW_RES_PATH):
-            print(f"{LOW_RES_PATH} folder already exist. Cannot convert, please remove it!")
+            print(f"{LOW_RES_PATH} folder already exists. Cannot convert, please remove it!")
             input("Press Enter to continue ...")
             continue
         init_paths = gen_file_paths(".")
@@ -322,87 +428,44 @@ This program can be added to your system's PATH environment variable.")
         shutil.copytree(".", BACKUP_PATH)
         del_files(init_paths)
         backup_paths = join_paths(BACKUP_PATH, init_paths)
-
-        # Findind all date creation of media.
-        w_dates = {}
-        wo_dates = []
-        print("Finding the date in files ...")
-        for path in backup_paths:  
-            extension = os.path.splitext(path)[1].lower()
-            if (extension in {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif", ".tif"}) and do_sort_date:
-                date = get_picture_date(path)
-            elif (extension in {".mp4", ".mov", ".m4a"}) and do_sort_date:
-                date = get_video_date(path)
-            else:
-                date = None
-            if date is None:
-                wo_dates.append(path)
-            else:
-                c = 1
-                date_new = date
-                while date_new in w_dates:
-                    date_new = date + str(c)
-                    c += 1
-                w_dates[date_new] = path
-
-        # Sorting out all paths by the creation date.
-        all_dates = set()
-        sorted_paths = []
-        sorted_filenames = []
-        i = 1
+        # Sorting like Windows sorting by name does.
+        backup_paths = natsorted(backup_paths, alg=ns.IGNORECASE)
         if do_sort_date:
+            dates = []
+            paths_w_dates = []
+            paths_wo_dates = []
+            print("Finding the date in files ...")
+            for path in backup_paths:
+                date = get_date(path)
+                if date is None:
+                    paths_wo_dates.append(path)
+                else:
+                    dates.append(date)
+                    paths_w_dates.append(path)
             print("Sorting files by date ...")
-            for key in natsorted(w_dates.keys()):
-                date, time = key.split()
-                # Checking if same the date already exist.
-                if not (date in all_dates):
-                    all_dates.add(date)
-                    i = 1
-                path = w_dates[key]
-                ext = os.path.splitext(path)[1]
-                filename = '%s %03d%s' % (date, i, ext)
-                sorted_filenames.append(filename)
-                sorted_paths.append(path)
-               # print("From: %s To: %s" % (path, filename))
-                i += 1
-        if do_sort_date and wo_dates:
-            print("Sorting other files ...")
-        elif not do_sort_date:
-            print("Sorting all files ...")
-        i = 1
-        for path in wo_dates:
-            ext = os.path.splitext(path)[1]
-            filename = '%03d%s' % (i, ext)
-            sorted_filenames.append(filename)
-            sorted_paths.append(path)
-            i += 1
-        # Renaming filenames, when not using date.
-        if (not use_date) and do_sort_date:
-            print("Generating filenames without dates ...")
-            sorted_filenames = []
-            i = 1
-            for path in sorted_paths:
-                ext = os.path.splitext(path)[1]
-                filename = '%03d%s' % (i, ext)
-                sorted_filenames.append(filename)
-                i += 1
-        # Creating new paths.
-        sorted_new_paths = []
-        for path, filename in zip(sorted_paths, sorted_filenames):
-            new_path = rem_first_dir(path)
-            new_path = os.path.split(new_path)[0]
-            new_path = os.path.join(new_path, filename)
-            sorted_new_paths.append(new_path)
-        # Copying files back with renamed filenames.
+            new_paths, old_paths = gen_sorted_by_dates(paths_w_dates, dates, use_date)
+            print("Generating filenames without date ...")
+            new_paths = gen_numerated_filenames(paths_wo_dates) + new_paths
+            new_paths = [rem_first_dir(path) for path in new_paths]
+            old_paths =  paths_wo_dates + old_paths
+        elif do_sort_filename:
+            print("Generating filenames ...")
+            new_paths = gen_numerated_filenames(backup_paths)
+            new_paths = [rem_first_dir(path) for path in new_paths]
+            old_paths = backup_paths
+        else:
+            new_paths = [rem_first_dir(path) for path in backup_paths]
+            old_paths = backup_paths
+            
         print("Renaming all files ...")
-        for path, new_path in zip(sorted_paths, sorted_new_paths):
-            print("Renaming %s -> %s ... " % (rem_first_dir(path), new_path), end='')
-            shutil.copy(path, new_path)
+        for old_path, new_path in zip(old_paths, new_paths):
+            print("Renaming %s -> %s ... " % (rem_first_dir(old_path), new_path), end='')
+            shutil.copy(old_path, new_path)
             print("Done!")
-        # This for loop block is not joined to ensure cleaner terminal output.
+
         if do_low_res:
             print("Creating lower resolution photos in %s folder..." % LOW_RES_PATH)
-            for path in sorted_new_paths:
+            for path in new_paths:
                 low_res_path = os.path.join(LOW_RES_PATH, path)
                 folder_path = os.path.split(low_res_path)[0]
                 if not os.path.exists(folder_path):

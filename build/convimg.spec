@@ -2,17 +2,25 @@
 
 
 a = Analysis(
-    ['..\\convimg.py'],
+    ['../convimg.py'],
     pathex=[],
     binaries=[],
-    datas=[('LICENSE.txt', '.')],
+    datas=[('../LICENSE', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'tkinter', '_tkinter', 'unittest', 'test', 'email', 'http', 
+        'xmlrpc', 'html', 'sqlite3', 'pydoc', 
+        'doctest', 'distutils', 'setuptools', 'pkg_resources', 
+        'multiprocessing', 'pdb', 'ssl', 'asyncio', 'socket',
+        'lib2to3', 'idlelib', 'turtle', 'ensurepip', 'venv', 
+        'bz2', 'lzma', 'curses', 'smtplib', 'ftplib', 'poplib', 
+        'imaplib', 'wsgiref', 'cgi', 'cgitb'
+    ],
     noarchive=False,
-    optimize=0,
+    optimize=2,
 )
 pyz = PYZ(a.pure)
 
@@ -26,7 +34,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,

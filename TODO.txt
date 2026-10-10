@@ -1,0 +1,4 @@
+Option to disable nesting
+Option to save time to the filename
+Video compression with h264 and optimal bitrates
+
