@@ -1,30 +1,30 @@
 # Convert Images: Smart Photo Organizer & Image Resizer
 
-Many phones and cameras use different filenames to save photos. This program sorts all photos by date and renames them. Many images have very high resolution and take up a lot of space. This program was optimised for 10x15 cm prints with a DPI of 300, which is enough for a print photo to look good. When converting photos, you can reduce the file size by a factor of multiple.
+Many phones and cameras use different filenames to save photos. When friends send photos from an event in different formats, it becomes a total mess. This program sorts all photos and videos by date and renames them. Many images have very high resolution and take up a lot of space. This program optimizes photos to the desired resolution to make print photos look good enough. When converting photos, you can reduce the file size by several times.
 
 ## Features
 
-* __Auto Sort__: Photos and videos are organized by date.
-* __Bulk Rename__: Files are renamed by their date, ensuring consistent naming.
-* __Optimized Resize__: Creates lower resolution copies suitable for sharing online and for high-quality 10x15 cm prints (300 DPI).
-* __Secure Workflow__: Includes automatic backup of original files before processing.
-* __Cross-platform__: Built for Windows with a simple executable, but the Python source code runs on any OS.
-* __Flexible Interface__: Uses a simple command line interface.
-
+* Extract media creation date from photos and videos.
+* Sort photos and videos by date.
+* Rename filenames of all file types neatly in numerical format.
+* Create optimal lower-resolution photos using the Lanczos algorithm.
+* Customize parameters in convimg_config.json.
 
 ## Get Started
 
 ### Windows Executable
 
-1. Download the `convimg.exe` from the [releases page](https://github.com/dnarkevi/image-converter/releases).
-2. (Optional) For getting date from videos, install the ffmpeg.exe executable and add it to your system's PATH environment variable from [here](https://github.com/BtbN/FFmpeg-Builds/releases).
-3. Run the program.
+1. Download the latest version of `convimg.exe` from the [releases page](https://github.com/dnarkevi/image-converter/releases).
+2. (Optional) For getting date from videos, download and install the ffmpeg.exe executable from [here](https://github.com/BtbN/FFmpeg-Builds/releases) and add it to your system's PATH environment variable.
+3. Run the program directly from File Explorer or from command line: `convimg [target_directory]`
+4. Type `h` and press Enter to view the help menu.
 
 ### From Source
 
-1.  Clone the repository: `git clone https://github.com/dnarkevi/image-converter`
-2.  Install dependencies: `pip install -r requirements.txt`
-3.  Run the program: `python convimg.py`
+1. Clone the repository: `git clone https://github.com/dnarkevi/image-converter`
+2. Install dependencies: `pip install -r requirements.txt`
+3. Run the program: `python convimg.py [target_directory]`
+4. Type `h` and press Enter to view the help menu.
 
 ## Code
 
